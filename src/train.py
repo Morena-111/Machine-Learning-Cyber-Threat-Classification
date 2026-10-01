@@ -1,4 +1,5 @@
 import tensorflow as tf
+import pandas as pd
 
 
 from src.data_loader import load_datasets
@@ -163,7 +164,33 @@ def main():
 
     print("\nTraining completed.")
 
-    print(f"Epochs completed: {len(history.history['loss'])}")
+epochs_completed = len(history.history["loss"])
+
+print(f"Epochs completed: {epochs_completed}")
+
+# ---------------------------------------------------------
+# Save training history
+# ---------------------------------------------------------
+history_data = {
+    "epoch": range(1, epochs_completed + 1),
+    "loss": history.history["loss"],
+    "accuracy": history.history["accuracy"],
+    "val_loss": history.history["val_loss"],
+    "val_accuracy": history.history["val_accuracy"],
+    "val_precision": validation_metrics.precision_history,
+    "val_recall": validation_metrics.recall_history,
+    "val_f1": validation_metrics.f1_history,
+}
+
+history_df = pd.DataFrame(history_data)
+
+history_df.to_csv(
+    "results/training_history.csv",
+    index=False
+)
+
+print("\nTraining history saved to:")
+print("results/training_history.csv")
 
 
 if __name__ == "__main__":
