@@ -22,6 +22,17 @@ from src.model import create_vectorizer, build_model, compile_model
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _windows_safe_text(texts):
+    """Preserve CTI text while replacing characters unsupported by cp1252.
+
+    TensorFlow/Keras on this Windows/Python build internally converts some
+    string batches through cp1252 during ``fit``. Replacing only characters
+    outside that code page prevents a UnicodeEncodeError without modifying
+    the source JSONL records or entity labels.
+    """
+    return [text.encode("cp1252", errors="replace").decode("cp1252") for text in texts]
+
+
 def _verify_entity_split_integrity(train_examples, validation_examples, test_examples):
     """Fail fast if entity examples from one document occur in multiple splits."""
     ids = {
@@ -85,6 +96,7 @@ def run_training(epochs=30, batch_size=32):
     train_examples = extract_entity_examples(train_records)
     label_encoder = create_label_encoder(train_examples)
     train_texts = prepare_text_data(train_examples)
+    train_texts = _windows_safe_text(train_texts)
     train_labels = encode_labels(train_examples, label_encoder)
 
     # ---------------------------------------------------------
@@ -92,6 +104,7 @@ def run_training(epochs=30, batch_size=32):
     # ---------------------------------------------------------
     validation_examples = extract_entity_examples(validation_records)
     validation_texts = prepare_text_data(validation_examples)
+    validation_texts = _windows_safe_text(validation_texts)
     validation_labels = encode_labels(validation_examples, label_encoder)
 
     # ---------------------------------------------------------
@@ -99,6 +112,7 @@ def run_training(epochs=30, batch_size=32):
     # ---------------------------------------------------------
     test_examples = extract_entity_examples(test_records)
     test_texts = prepare_text_data(test_examples)
+    test_texts = _windows_safe_text(test_texts)
     test_labels = encode_labels(test_examples, label_encoder)
 
     print(f"\nTraining examples: {len(train_texts)}")
@@ -169,7 +183,7 @@ def run_training(epochs=30, batch_size=32):
     # Train model
     # ---------------------------------------------------------
     print("\nStarting model training...")
-    history = model.fit(train_dataset, validation_data=validation_dataset, epochs=epochs, class_weight=class_weights, callbacks=callbacks, verbose=2)
+    history = model.fit(train_dataset, validation_data=validation_dataset, epochs=epochs, class_weight=class_weights, callbacks=callbacks, verbose=0)
     print("\nTraining completed.")
     print(f"Epochs completed: {len(history.history['loss'])} / {epochs}")
 
