@@ -10,7 +10,7 @@ import tensorflow as tf
 
 from src.data_loader import load_datasets
 from src.model import build_model, compile_model, create_vectorizer
-from src.preprocess import prepare_document_dataset, save_label_encoder
+from src.preprocess import calculate_class_weights, prepare_document_dataset, save_label_encoder
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +72,12 @@ def run_training(epochs=30, batch_size=32):
         tf.keras.callbacks.ModelCheckpoint(models / "best_model.keras", monitor="val_loss", save_best_only=True),
         tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, verbose=1),
     ]
-    history = model.fit(np.asarray(train[0], dtype=str), train[1], validation_data=(np.asarray(validation[0], dtype=str), validation[1]), epochs=epochs, batch_size=batch_size, callbacks=callbacks, verbose=2)
+    history = model.fit(
+        np.asarray(train[0], dtype=str), train[1],
+        validation_data=(np.asarray(validation[0], dtype=str), validation[1]),
+        epochs=epochs, batch_size=batch_size, callbacks=callbacks,
+        class_weight=calculate_class_weights(train[1]), verbose=2,
+    )
     model.save(models / "best_model.keras")
     print(f"Epochs completed: {len(history.history['loss'])} / {epochs}")
     return history
