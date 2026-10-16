@@ -3,6 +3,11 @@
 
 # Python cache
 __pycache__/
+*.pyc
+venv/
+.venv/
+.ipynb_checkpoints/
+logs/tensorboard/
 *.py[cod]
 *$py.class
 
