@@ -31,7 +31,7 @@ from sklearn.metrics import (
 )
 
 from src.data_loader import load_datasets
-from src.model import AttentionLayer, SparseAUC, SparseMacroF1, SparseMacroRate
+from src.model import build_model
 from src.preprocess import encode_labels, extract_entity_examples, prepare_text_data
 
 
@@ -119,15 +119,24 @@ def evaluate_model():
     texts = prepare_text_data(test_examples)
     labels = encode_labels(test_examples, encoder)
 
-    # Custom objects must be registered when loading the model, otherwise Keras
-    # cannot reconstruct the AttentionLayer or the custom metric classes.
-    custom = {
-        "AttentionLayer": AttentionLayer,
-        "SparseMacroF1": SparseMacroF1,
-        "SparseMacroRate": SparseMacroRate,
-        "SparseAUC": SparseAUC,
-    }
-    model = tf.keras.models.load_model(models / "best_model.h5", custom_objects=custom)
+    # Rebuild the graph from source instead of deserializing TextVectorization.
+    # Keras 3 may deserialize its generated NotEqual mask operation incorrectly.
+    with open(models / "tokenizer.pkl", "rb") as handle:
+        vocabulary = pickle.load(handle)
+    vectorizer = tf.keras.layers.TextVectorization(
+        max_tokens=10000,
+        output_mode="int",
+        output_sequence_length=50,
+        standardize="lower_and_strip_punctuation",
+    )
+    vectorizer.set_vocabulary(vocabulary)
+    model = build_model(vectorizer, num_classes=len(encoder.classes_))
+    model.load_weights(models / "best_model.keras")
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
 
     # Probabilities are needed for ROC/PR curves; argmax gives hard class labels.
     probabilities = model.predict(np.asarray(texts, dtype=str), verbose=0)
@@ -242,16 +251,27 @@ def create_shap_explanation(max_samples=20):
 
     models, results = ROOT / "models", ROOT / "results"
 
-    custom = {
-        "AttentionLayer": AttentionLayer,
-        "SparseMacroF1": SparseMacroF1,
-        "SparseMacroRate": SparseMacroRate,
-        "SparseAUC": SparseAUC,
-    }
-    model = tf.keras.models.load_model(models / "best_model.h5", custom_objects=custom)
-
     with open(models / "label_encoder.pkl", "rb") as handle:
         encoder = pickle.load(handle)
+
+    # Rebuild the graph and load only numeric weights to bypass Keras 3's
+    # TextVectorization deserialization issue.
+    with open(models / "tokenizer.pkl", "rb") as handle:
+        vocabulary = pickle.load(handle)
+    vectorizer = tf.keras.layers.TextVectorization(
+        max_tokens=10000,
+        output_mode="int",
+        output_sequence_length=50,
+        standardize="lower_and_strip_punctuation",
+    )
+    vectorizer.set_vocabulary(vocabulary)
+    model = build_model(vectorizer, num_classes=len(encoder.classes_))
+    model.load_weights(models / "best_model.keras")
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
 
     _, _, raw_test = load_datasets(ROOT / "data")
     test_examples = extract_entity_examples(raw_test)
