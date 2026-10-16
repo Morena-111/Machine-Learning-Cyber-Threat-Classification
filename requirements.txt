@@ -1,10 +1,25 @@
-tensorflow>=2.20,<2.21
+# Deep learning framework
+# Installed version is 2.20.0. Allow the 2.20-2.21 range so pip resolves
+# to a compatible version on this machine without forcing an exact pin.
+tensorflow>=2.20,<2.22
+
+# Data manipulation
 pandas>=2.0
 numpy>=1.24
+
+# Classical ML utilities (metrics, LabelEncoder, class weights)
 scikit-learn>=1.3
+
+# Plotting (metric graphs for rubric Section 2.4)
 matplotlib>=3.7
+
+# API backend (rubric Section 2.5)
 fastapi>=0.110
 uvicorn[standard]>=0.27
 requests>=2.31
+
+# Explainable AI bonus (rubric Section 2.7)
 shap>=0.44
+
+# Notebook environment (rubric requires visible notebook outputs)
 jupyter>=1.0

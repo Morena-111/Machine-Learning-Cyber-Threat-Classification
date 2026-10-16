@@ -1,18 +1,14 @@
 """
 Evaluation workflow for the ITRI625 Cyber Threat Classification project.
 
-This module loads the trained model and its preprocessing artifacts, runs the
-model on the held-out test split, and produces the rubric-required outputs:
-
-  - results/classification_report.csv   (per-class precision/recall/F1)
-  - results/test_metrics.json           (aggregate test metrics)
-  - results/roc_curve.png               (One-vs-Rest ROC curves)
-  - results/pr_curve.png                (One-vs-Rest precision-recall curves)
-  - results/confusion_matrix.png        (test-set confusion matrix)
-  - results/loss_curve.png              (training vs validation loss)
-
-An optional SHAP explanation (results/shap_explanation.png) can also be
-generated to support the Explainable AI bonus requirement.
+Produces test metrics and the rubric-required figures:
+  - results/classification_report.csv
+  - results/test_metrics.json
+  - results/roc_curve.png
+  - results/pr_curve.png
+  - results/confusion_matrix.png
+  - results/loss_curve.png
+  - results/shap_explanation.png
 """
 
 import json
@@ -22,6 +18,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     auc,
@@ -35,36 +32,61 @@ from src.model import build_model
 from src.preprocess import encode_labels, extract_entity_examples, prepare_text_data
 
 
-# Project root — evaluate.py lives in src/, so parents[1] is the repo root.
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _save_figure(path):
-    """
-    Save the current Matplotlib figure to disk at high resolution and close it.
-
-    Centralising this in a helper keeps every plot at the same DPI (300) and
-    prevents figures from accumulating in memory across multiple plots.
-
-    Args:
-        path (str | Path): Destination file path (e.g. results/roc_curve.png).
-    """
+    """Save current figure at 300 DPI and close it."""
     plt.tight_layout()
     plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
+def _predict(model, texts, batch_size=32):
+    """
+    Predict on a list of raw strings using a tf.data.Dataset.
+
+    Passing a NumPy array of Python strings to model.predict() triggers a
+    Keras 3 bug ("Invalid dtype: str12256") when the model contains a
+    TextVectorization layer. Wrapping the strings in a tf.data.Dataset with
+    an explicit tf.string dtype bypasses that path.
+    """
+    dataset = tf.data.Dataset.from_tensor_slices(
+        tf.constant(texts, dtype=tf.string)
+    ).batch(batch_size)
+    return model.predict(dataset, verbose=0)
+
+
+def _rebuild_model(models_dir, encoder):
+    """
+    Rebuild the architecture and load weights only.
+
+    This bypasses a Keras 3 bug where TextVectorization's internal NotEqual
+    mask op cannot be deserialized from a saved model (.keras or .h5).
+    """
+    with open(models_dir / "tokenizer.pkl", "rb") as handle:
+        vocabulary = pickle.load(handle)
+
+    vectorizer = tf.keras.layers.TextVectorization(
+        max_tokens=10000,
+        output_mode="int",
+        output_sequence_length=50,
+        standardize="lower_and_strip_punctuation",
+    )
+    vectorizer.set_vocabulary(vocabulary)
+
+    model = build_model(vectorizer, num_classes=len(encoder.classes_))
+    model.load_weights(models_dir / "best_model.h5")
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+    return model
+
+
 def plot_loss_curve(log_path, output):
-    """
-    Plot training vs validation loss from the CSV logger's output.
-
-    The best validation epoch is marked with a vertical line so the effect of
-    early stopping is visible in the figure (this supports Section 2.6).
-
-    Args:
-        log_path (str | Path): Path to the CSV written by the CSVLogger callback.
-        output (str | Path):   Path where the PNG should be saved.
-    """
+    """Plot train/val loss with early-stop epoch marker."""
     log = pd.read_csv(log_path)
     epochs = np.arange(1, len(log) + 1)
 
@@ -72,8 +94,6 @@ def plot_loss_curve(log_path, output):
     plt.plot(epochs, log["loss"], label="Training loss")
     plt.plot(epochs, log["val_loss"], label="Validation loss")
 
-    # Identify the epoch with the lowest validation loss (this is the epoch
-    # whose weights are restored by EarlyStopping(restore_best_weights=True)).
     best = int(log["val_loss"].idxmin()) + 1
     plt.axvline(
         best,
@@ -90,72 +110,36 @@ def plot_loss_curve(log_path, output):
 
 
 def evaluate_model():
-    """
-    Load the trained model and produce all test-set metrics and figures.
-
-    Steps:
-      1. Load the label encoder and test split from disk.
-      2. Preprocess the test text into model-ready sequences.
-      3. Load the saved Keras model (including custom layers/metrics).
-      4. Predict class probabilities and derive hard labels.
-      5. Write the classification report and aggregate metrics to results/.
-      6. Generate ROC, PR, confusion matrix, and loss curve figures.
-
-    Returns:
-        dict: Aggregate test metrics (accuracy, macro precision/recall/F1, AUC).
-    """
-    import tensorflow as tf  # Imported here so the module can be inspected without TF installed.
-
-    results, models, logs = ROOT / "results", ROOT / "models", ROOT / "logs"
+    """Load model, predict on test split, produce metrics and figures."""
+    results = ROOT / "results"
+    models = ROOT / "models"
+    logs = ROOT / "logs"
     results.mkdir(exist_ok=True)
 
-    # Reload the exact label encoder used during training so class indices align.
     with open(models / "label_encoder.pkl", "rb") as handle:
         encoder = pickle.load(handle)
 
-    # Load and preprocess the held-out entity examples with the training encoder.
     _, _, raw_test = load_datasets(ROOT / "data")
     test_examples = extract_entity_examples(raw_test)
     texts = prepare_text_data(test_examples)
     labels = encode_labels(test_examples, encoder)
 
-    # Rebuild the graph from source instead of deserializing TextVectorization.
-    # Keras 3 may deserialize its generated NotEqual mask operation incorrectly.
-    with open(models / "tokenizer.pkl", "rb") as handle:
-        vocabulary = pickle.load(handle)
-    vectorizer = tf.keras.layers.TextVectorization(
-        max_tokens=10000,
-        output_mode="int",
-        output_sequence_length=50,
-        standardize="lower_and_strip_punctuation",
-    )
-    vectorizer.set_vocabulary(vocabulary)
-    model = build_model(vectorizer, num_classes=len(encoder.classes_))
-    model.load_weights(models / "best_model.keras")
-    model.compile(
-        optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
-    )
+    model = _rebuild_model(models, encoder)
 
-    # Probabilities are needed for ROC/PR curves; argmax gives hard class labels.
-    probabilities = model.predict(np.asarray(texts, dtype=str), verbose=0)
+    probabilities = _predict(model, texts)
     predicted = probabilities.argmax(axis=1)
-
-    # Human-readable class names in the same order as the encoder's classes_.
     target_names = encoder.classes_.tolist()
 
-    # Per-class precision/recall/F1 report, saved for Section 3.3 analysis.
     report = classification_report(
         labels,
         predicted,
+        labels=list(range(len(target_names))),
         target_names=target_names,
         output_dict=True,
         zero_division=0,
     )
     pd.DataFrame(report).transpose().to_csv(results / "classification_report.csv")
 
-    # Aggregate metrics used in the theory write-up.
     metrics = {
         "accuracy": float(np.mean(predicted == labels)),
         "macro_precision": float(report["macro avg"]["precision"]),
@@ -163,15 +147,12 @@ def evaluate_model():
         "macro_f1": float(report["macro avg"]["f1-score"]),
     }
 
-    # ---- ROC curves (One-vs-Rest for multi-class) ----
-    # One-hot encode the true labels so each class can be treated as a binary problem.
     y_onehot = tf.keras.utils.to_categorical(labels, len(target_names))
     metrics["macro_auc_ovr"] = 0.0
     roc_class_count = 0
 
-    plt.figure(figsize=(8, 7))
+    plt.figure(figsize=(9, 8))
     for index, name in enumerate(target_names):
-        # Skip classes that have only one unique value — roc_curve would fail.
         if y_onehot[:, index].min() == y_onehot[:, index].max():
             continue
         fpr, tpr, _ = roc_curve(y_onehot[:, index], probabilities[:, index])
@@ -180,19 +161,18 @@ def evaluate_model():
         metrics["macro_auc_ovr"] += value
         roc_class_count += 1
 
-    # Average AUC over all classes that produced a curve.
-    metrics["macro_auc_ovr"] /= roc_class_count
+    metrics["macro_auc_ovr"] = (
+        metrics["macro_auc_ovr"] / roc_class_count if roc_class_count else None
+    )
     plt.plot([0, 1], [0, 1], "k--", label="Chance")
     plt.title("One-vs-Rest ROC curves")
     plt.xlabel("False positive rate")
     plt.ylabel("True positive rate")
-    plt.legend(fontsize=8)
+    plt.legend(fontsize=8, loc="lower right")
     _save_figure(results / "roc_curve.png")
 
-    # ---- Precision-Recall curves (One-vs-Rest) ----
-    plt.figure(figsize=(8, 7))
+    plt.figure(figsize=(9, 8))
     for index, name in enumerate(target_names):
-        # Skip classes that have no positive/negative test entity examples.
         if y_onehot[:, index].min() == y_onehot[:, index].max():
             continue
         precision, recall, _ = precision_recall_curve(
@@ -202,16 +182,15 @@ def evaluate_model():
     plt.title("One-vs-Rest precision-recall curves")
     plt.xlabel("Recall")
     plt.ylabel("Precision")
-    plt.legend(fontsize=8)
+    plt.legend(fontsize=8, loc="lower left")
     _save_figure(results / "pr_curve.png")
 
-    # ---- Confusion matrix ----
-    fig, ax = plt.subplots(figsize=(9, 8))
+    fig, ax = plt.subplots(figsize=(11, 9))
     ConfusionMatrixDisplay.from_predictions(
         labels,
         predicted,
         display_labels=target_names,
-        xticks_rotation=35,
+        xticks_rotation=45,
         cmap="Blues",
         ax=ax,
         colorbar=False,
@@ -219,76 +198,55 @@ def evaluate_model():
     ax.set_title("Test-set confusion matrix")
     _save_figure(results / "confusion_matrix.png")
 
-    # ---- Loss curve (from the CSV logger written during training) ----
     plot_loss_curve(logs / "training_log.csv", results / "loss_curve.png")
 
-    # Persist the aggregate metrics for use in the theory report.
     (results / "test_metrics.json").write_text(json.dumps(metrics, indent=2))
-
     return metrics
 
 
 def create_shap_explanation(max_samples=20):
-    """
-    Generate a SHAP text explanation for a small sample of test entity inputs.
-
-    SHAP is model-agnostic here: we wrap the trained model in a callable that
-    accepts raw text strings and returns predicted probabilities. The resulting
-    text plot highlights which tokens drove the prediction — this satisfies the
-    XAI bonus requirement (Section 2.7).
-
-    Args:
-        max_samples (int): Number of test entity inputs to explain. Keep this small
-                           because SHAP is computationally expensive.
-    """
+    """Generate a SHAP text explanation on a small test sample."""
     try:
         import shap
-        import tensorflow as tf
     except ImportError as error:
-        raise RuntimeError(
-            "Install the optional 'shap' dependency to generate this figure."
-        ) from error
+        raise RuntimeError("Install shap: pip install shap") from error
 
-    models, results = ROOT / "models", ROOT / "results"
+    models = ROOT / "models"
+    results = ROOT / "results"
 
     with open(models / "label_encoder.pkl", "rb") as handle:
         encoder = pickle.load(handle)
 
-    # Rebuild the graph and load only numeric weights to bypass Keras 3's
-    # TextVectorization deserialization issue.
-    with open(models / "tokenizer.pkl", "rb") as handle:
-        vocabulary = pickle.load(handle)
-    vectorizer = tf.keras.layers.TextVectorization(
-        max_tokens=10000,
-        output_mode="int",
-        output_sequence_length=50,
-        standardize="lower_and_strip_punctuation",
-    )
-    vectorizer.set_vocabulary(vocabulary)
-    model = build_model(vectorizer, num_classes=len(encoder.classes_))
-    model.load_weights(models / "best_model.keras")
-    model.compile(
-        optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
-    )
+    model = _rebuild_model(models, encoder)
 
     _, _, raw_test = load_datasets(ROOT / "data")
     test_examples = extract_entity_examples(raw_test)
     texts = prepare_text_data(test_examples)
 
-    # The explainer needs a callable that maps a list of strings to probabilities.
+    # Use the same Dataset-based prediction path to avoid the dtype bug.
     explainer = shap.Explainer(
-        lambda values: model.predict(np.asarray(values, dtype=str), verbose=0),
+        lambda values: _predict(model, values, batch_size=16),
         shap.maskers.Text(),
     )
     values = explainer(texts[:max_samples])
-
-    # Plot the first sample's class-0 explanation and save the figure to disk.
     shap.plots.text(values[0, :, 0], display=False)
     plt.savefig(results / "shap_explanation.png", dpi=300, bbox_inches="tight")
     plt.close()
 
 
 if __name__ == "__main__":
-    print(evaluate_model())
+    # Primary evaluation: metrics + all 4 plots + test_metrics.json
+    metrics = evaluate_model()
+    print("\n=== FINAL TEST SET METRICS ===")
+    for key, value in metrics.items():
+        print(f"  {key:20s}: {value}")
+
+    # Bonus: SHAP XAI explanation for Section 2.7.
+    # Failures here should not block the primary output, so we catch and report.
+    print("\nGenerating SHAP explanation (this may take ~1 minute)...")
+    try:
+        create_shap_explanation(max_samples=10)
+        print("SHAP explanation saved to results/shap_explanation.png")
+    except Exception as error:
+        print(f"SHAP generation failed: {error}")
+        print("The primary evaluation outputs above are still valid.")

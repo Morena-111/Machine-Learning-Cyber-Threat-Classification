@@ -12,7 +12,7 @@ python -m src.train
 python -m src.evaluate
 ```
 
-The training command performs split-ID leakage checks on entity source documents, writes class-distribution plots, saves `models/best_model.h5`, a vectorizer vocabulary (`models/tokenizer.pkl`), entity-label encoder, CSV/TensorBoard logs, and reports the epochs completed. Evaluation creates the ROC, precision-recall, confusion-matrix, loss, report, and JSON metric artifacts. Run `python -c "from src.evaluate import create_shap_explanation; create_shap_explanation()"` after evaluation to create the optional SHAP image.
+The training command performs split-ID leakage checks on entity source documents, writes class-distribution plots, saves `models/best_model.keras`, a vectorizer vocabulary (`models/tokenizer.pkl`), entity-label encoder, CSV/TensorBoard logs, and reports the epochs completed. Evaluation creates the ROC, precision-recall, confusion-matrix, loss, report, and JSON metric artifacts. Run `python -c "from src.evaluate import create_shap_explanation; create_shap_explanation()"` after evaluation to create the optional SHAP image.
 
 ## Dataset
 
