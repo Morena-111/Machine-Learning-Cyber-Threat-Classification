@@ -2,7 +2,7 @@
 
 ## 3.1 Model scenario
 
-A security operations centre (SOC) receives thousands of threat-intelligence reports, vendor advisories, and incident notes. Analysts must rapidly triage them: a report about ransomware should reach malware-response playbooks, while a report about an adversary group should inform attribution and hunting. This project classifies the text of each report into its primary threat category. It provides a consistent first-pass route, allowing analysts to spend their time validating and investigating rather than manually sorting repetitive reports. It is decision support, not an autonomous security control.
+This project develops a Named Entity Recognition (NER) model that automatically classifies entity mentions in cyber threat intelligence (CTI) reports into STIX 2.1 entity types — including malware, threat-actor, vulnerability, IPV4, EMAIL, and DOMAIN. Such models are the foundation of modern CTI platforms (MISP, OpenCTI), where automated entity extraction converts unstructured threat reports into structured, queryable intelligence. By classifying 20 entity types across 12,679 annotated examples, this model demonstrates how deep learning can automate a core workflow in security operations.
 
 ## 3.2 Model architecture
 

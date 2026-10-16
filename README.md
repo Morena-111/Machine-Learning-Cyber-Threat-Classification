@@ -1,6 +1,6 @@
 # ITRI625 Cyber Threat Classification
 
-TensorFlow/Keras BiLSTM-with-attention classifier for cybersecurity threat-intelligence (CTI) text. It supports the rubric CSV splits and the repository's existing JSONL splits.
+TensorFlow/Keras BiLSTM-with-attention classifier for cybersecurity threat-intelligence (CTI) entity mentions. It performs entity classification (NER-style) across STIX 2.1 entity types and supports the rubric CSV splits and the repository's existing JSONL splits.
 
 ## Setup
 
@@ -12,11 +12,11 @@ python -m src.train
 python -m src.evaluate
 ```
 
-The training command performs split-ID leakage checks, writes class-distribution plots, saves `models/best_model.keras`, a vectorizer vocabulary (`models/tokenizer.pkl`), label encoder, CSV/TensorBoard logs, and reports the epochs completed. Evaluation creates the ROC, precision-recall, confusion-matrix, loss, report, and JSON metric artifacts. Run `python -c "from src.evaluate import create_shap_explanation; create_shap_explanation()"` after evaluation to create the optional SHAP image.
+The training command performs split-ID leakage checks on entity source documents, writes class-distribution plots, saves `models/best_model.keras`, a vectorizer vocabulary (`models/tokenizer.pkl`), entity-label encoder, CSV/TensorBoard logs, and reports the epochs completed. Evaluation creates the ROC, precision-recall, confusion-matrix, loss, report, and JSON metric artifacts. Run `python -c "from src.evaluate import create_shap_explanation; create_shap_explanation()"` after evaluation to create the optional SHAP image.
 
 ## Dataset
 
-Place the three Kaggle CSVs in `data/` as `cyber-threat-intelligence-splited_train.csv`, `cyber-threat-intelligence-splited_validate.csv`, and `cyber-threat-intelligence-splited_test.csv`. If they are absent, the supplied `train.jsonl`, `validation.jsonl`, and `test.jsonl` splits are used. The pipeline accepts either CSV `Entries` or JSONL `entities` annotations, uses the first annotated label as the document target, and excludes unannotated records rather than treating them as benign.
+Place the three Kaggle CSVs in `data/` as `cyber-threat-intelligence-splited_train.csv`, `cyber-threat-intelligence-splited_validate.csv`, and `cyber-threat-intelligence-splited_test.csv`. If they are absent, the supplied `train.jsonl`, `validation.jsonl`, and `test.jsonl` splits are used. The entity pipeline uses every labelled entity span, preserves its source-document ID for leakage checks, wraps the target with `[ENTITY]` markers, and includes local context for classification.
 
 ## Run the desktop application
 
