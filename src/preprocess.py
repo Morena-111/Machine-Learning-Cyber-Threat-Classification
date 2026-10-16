@@ -1,4 +1,8 @@
 import re
+import ast
+import json
+import pickle
+from pathlib import Path
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -63,6 +67,54 @@ def create_model_input(example, context_window=150):
     return re.sub(r"\s+", " ", model_input).strip()
 
 from sklearn.preprocessing import LabelEncoder
+
+
+def extract_document_label(record):
+    """Return the first available target label from CSV or JSONL records.
+
+    CSV records store entity annotations in ``Entries`` as JSON; the supplied
+    JSONL corpus stores them in ``entities``.  A document with no annotation is
+    intentionally returned as ``None`` rather than guessed as benign.
+    """
+    entries = record.get("Entries", record.get("entities", []))
+    if isinstance(entries, str):
+        try:
+            entries = json.loads(entries)
+        except json.JSONDecodeError:
+            try:
+                entries = ast.literal_eval(entries)
+            except (SyntaxError, ValueError):
+                return None
+    if not entries:
+        return None
+    first = entries[0]
+    return first.get("label") if isinstance(first, dict) else None
+
+
+def prepare_document_dataset(records, encoder=None, fit_encoder=False):
+    """Create text/label arrays for document-level threat classification."""
+    texts, labels, ids = [], [], []
+    for record in records:
+        label = extract_document_label(record)
+        text = str(record.get("text", "")).strip()
+        if label and text:
+            texts.append(re.sub(r"\s+", " ", text))
+            labels.append(label)
+            ids.append(record.get("id"))
+    if fit_encoder:
+        encoder = LabelEncoder().fit(labels)
+    if encoder is None:
+        raise ValueError("An encoder is required unless fit_encoder=True.")
+    known = set(encoder.classes_)
+    keep = [i for i, label in enumerate(labels) if label in known]
+    return ([texts[i] for i in keep], encoder.transform([labels[i] for i in keep]),
+            [ids[i] for i in keep], encoder)
+
+
+def save_label_encoder(encoder, path="models/label_encoder.pkl"):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as output:
+        pickle.dump(encoder, output)
 
 
 def create_label_encoder(train_examples):
