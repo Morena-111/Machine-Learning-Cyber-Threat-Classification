@@ -174,7 +174,7 @@ def run_training(epochs=30, batch_size=32):
         tf.keras.callbacks.CSVLogger(logs_dir / "training_log.csv"),
         tf.keras.callbacks.CSVLogger(results_dir / "training_log.csv"),
         tf.keras.callbacks.TensorBoard(log_dir=logs_dir / "tensorboard"),
-        tf.keras.callbacks.ModelCheckpoint(models_dir / "best_model.keras", monitor="val_loss", save_best_only=True),
+        tf.keras.callbacks.ModelCheckpoint(models_dir / "best_model.h5", monitor="val_loss", save_best_only=True),
         tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, verbose=1),
     ]
     print("\nEarly stopping configured.")
@@ -187,7 +187,7 @@ def run_training(epochs=30, batch_size=32):
     print("\nTraining completed.")
     print(f"Epochs completed: {len(history.history['loss'])} / {epochs}")
 
-    model.save(models_dir / "best_model.keras")
+    model.save(models_dir / "best_model.h5")
     save_label_encoder(label_encoder, models_dir / "label_encoder.pkl")
     with open(models_dir / "tokenizer.pkl", "wb") as handle:
         pickle.dump(vectorizer.get_vocabulary(), handle)
