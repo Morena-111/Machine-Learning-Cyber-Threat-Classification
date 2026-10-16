@@ -133,9 +133,18 @@ def run_training(epochs=30, batch_size=32):
     # ---------------------------------------------------------
     # Create TensorFlow datasets
     # ---------------------------------------------------------
-    train_dataset = tf.data.Dataset.from_tensor_slices((train_texts, train_labels))
+    # Encode explicitly as UTF-8 bytes before TensorFlow receives the text.
+    # This avoids Windows' cp1252 conversion path failing on multilingual CTI
+    # reports while TextVectorization still receives normal string tensors.
+    train_text_tensor = tf.constant([text.encode("utf-8") for text in train_texts])
+    validation_text_tensor = tf.constant(
+        [text.encode("utf-8") for text in validation_texts]
+    )
+    train_dataset = tf.data.Dataset.from_tensor_slices((train_text_tensor, train_labels))
     train_dataset = train_dataset.shuffle(len(train_texts), seed=42).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-    validation_dataset = tf.data.Dataset.from_tensor_slices((validation_texts, validation_labels))
+    validation_dataset = tf.data.Dataset.from_tensor_slices(
+        (validation_text_tensor, validation_labels)
+    )
     validation_dataset = validation_dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
     print("\nTensorFlow datasets created successfully.")
 
