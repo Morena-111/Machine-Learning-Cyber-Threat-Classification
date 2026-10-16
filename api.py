@@ -31,7 +31,7 @@ def load_artifacts():
     if model is None:
         try:
             custom = {"AttentionLayer": AttentionLayer, "SparseMacroF1": SparseMacroF1, "SparseMacroRate": SparseMacroRate, "SparseAUC": SparseAUC}
-            model = tf.keras.models.load_model(ROOT / "models" / "best_model.keras", custom_objects=custom)
+            model = tf.keras.models.load_model(ROOT / "models" / "best_model.h5", custom_objects=custom)
             with open(ROOT / "models" / "label_encoder.pkl", "rb") as handle:
                 label_encoder = pickle.load(handle)
             with open(ROOT / "models" / "tokenizer.pkl", "rb") as handle:
@@ -47,7 +47,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ready" if (ROOT / "models" / "best_model.keras").exists() else "model_not_trained"}
+    return {"status": "ready" if (ROOT / "models" / "best_model.h5").exists() else "model_not_trained"}
 
 
 @app.post("/predict", response_model=PredictionResponse)

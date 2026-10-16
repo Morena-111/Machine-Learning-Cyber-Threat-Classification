@@ -127,7 +127,7 @@ def evaluate_model():
         "SparseMacroRate": SparseMacroRate,
         "SparseAUC": SparseAUC,
     }
-    model = tf.keras.models.load_model(models / "best_model.keras", custom_objects=custom)
+    model = tf.keras.models.load_model(models / "best_model.h5", custom_objects=custom)
 
     # Probabilities are needed for ROC/PR curves; argmax gives hard class labels.
     probabilities = model.predict(np.asarray(texts, dtype=str), verbose=0)
@@ -248,7 +248,7 @@ def create_shap_explanation(max_samples=20):
         "SparseMacroRate": SparseMacroRate,
         "SparseAUC": SparseAUC,
     }
-    model = tf.keras.models.load_model(models / "best_model.keras", custom_objects=custom)
+    model = tf.keras.models.load_model(models / "best_model.h5", custom_objects=custom)
 
     with open(models / "label_encoder.pkl", "rb") as handle:
         encoder = pickle.load(handle)
