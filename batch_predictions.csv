@@ -1,0 +1,6 @@
+text,predicted_class,confidence
+The malware called Emotet,malware,0.971746
+CVE-2023-1234 is a critical vulnerability,vulnerability,0.954835
+APT29 is a known threat actor,threat-actor,0.992410
+The IP address 192.168.1.1 was in C2 traffic,IPV4,0.807582
+example.com is the C2 domain,MD5,0.399484
